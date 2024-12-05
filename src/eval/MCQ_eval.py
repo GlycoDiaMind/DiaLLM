@@ -7,7 +7,6 @@ import argparse
 import matplotlib.pyplot as plt
 
 
-
 # setting random seed
 seed = 42
 torch.manual_seed(seed)  # cpu
@@ -40,18 +39,16 @@ def diabetesPDiagLLM_output(content, model, tokenizer):
 def main(args):
     model_path = args.path
     if args.model == "DiabetesPDiagLLM":
-        tokenizer = AutoTokenizer.from_pretrained(model_path,trust_remote_code=True)
-        tokenizer.padding_side="left"
-        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-        model = AutoModel.from_pretrained(model_path,trust_remote_code=True).to(device)
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        tokenizer.padding_side = "left"
+        tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        model = AutoModel.from_pretrained(model_path, trust_remote_code=True).to(device)
         model_output = diabetesPDiagLLM_output
-        
-        
+
     model = model.eval()
     scores = {}
     mcq_file = "src/eval/data/merged_mcq.csv"
 
-    
     file_name = mcq_file.split("/")[-1]
     print(f"Processing {mcq_file} ...")
     df = pd.read_csv(mcq_file)
@@ -70,20 +67,26 @@ def main(args):
     # calculate MCQ score
     merged_df["responseTrimmed"] = merged_df["response"].apply(
         lambda x: (
-            re.search(r"[ABCDE]", x.split("<|assistant|>")[1].split("<|user|>")[0].strip()).group() if re.search(r"[ABCDE]", x.split("<|assistant|>")[1].split("<|user|>")[0].strip()) else None
+            re.search(
+                r"[ABCDE]", x.split("<|assistant|>")[1].split("<|user|>")[0].strip()
+            ).group()
+            if re.search(
+                r"[ABCDE]", x.split("<|assistant|>")[1].split("<|user|>")[0].strip()
+            )
+            else None
         )
     )
     merged_df["check"] = merged_df.apply(
         lambda row: 1 if row["responseTrimmed"] == row["answer"][0] else 0, axis=1
     )
-    
+
     score = merged_df["check"].mean()
     name = f"{args.model}"
-    merged_df.to_csv("src/eval/data/mcq_with_model_response.csv",index=False)
+    merged_df.to_csv("src/eval/data/mcq_with_model_response.csv", index=False)
     scores[name] = score
-    
+
     print(scores)
-    
+
     # Convert the dictionary into two lists: model names and scores
     model_names = list(scores.keys())
     scores = list(scores.values())
@@ -93,24 +96,23 @@ def main(args):
 
     # Plotting the scores
     plt.figure(figsize=(10, 6))
-    plt.bar(model_names, scores_percentage, color='skyblue',width=0.1)
+    plt.bar(model_names, scores_percentage, color="skyblue", width=0.1)
 
     # Adding titles and labels
-    plt.xlabel('Model Name')
-    plt.ylabel('% Correct')
-    plt.title('MCQ Benchmark')
+    plt.xlabel("Model Name")
+    plt.ylabel("% Correct")
+    plt.title("MCQ Benchmark")
     plt.ylim(0, 100)  # Set y-axis range from 0 to 100
 
     # Adding the percentage labels on top of the bars
     for i, score in enumerate(scores_percentage):
-        plt.text(i, score + 1, f'{score:.2f}%', ha='center', va='bottom')
-    
+        plt.text(i, score + 1, f"{score:.2f}%", ha="center", va="bottom")
+
     # Save the plot to a file
-    plt.savefig('model_performance.png', format='png')  # Save as PNG file
+    plt.savefig("MCQ Benchmark.png", format="png")  # Save as PNG file
 
     # Show the plot
     plt.show()
-
 
 
 if __name__ == "__main__":
