@@ -14,6 +14,25 @@ torch.cuda.manual_seed_all(seed)  # gpu
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+def ChatGLM4_9B_output(content,model,tokenizer):
+    messages = [
+        {
+            "role": "system",
+            "content": "你是一个专业的医生，请基于诊疗指南，为以下患者提供综合的管理意见:",
+        },
+        {
+            "role": "user",
+            "content": content,
+        },
+    ]
+    prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True
+    )
+    inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).to(
+        device
+    )
+    outputs = model.generate(**inputs, max_length=2000, num_return_sequences=1)
+    return tokenizer.decode(outputs[0], skip_special_tokens=False)
 
 def diabetesPDiagLLM_output(content, model, tokenizer):
     messages = [
@@ -36,6 +55,8 @@ def diabetesPDiagLLM_output(content, model, tokenizer):
     return tokenizer.decode(outputs[0], skip_special_tokens=False)
 
 
+
+
 def main(args):
     model_path = args.path
     if args.model == "DiabetesPDiagLLM":
@@ -45,9 +66,17 @@ def main(args):
         model = AutoModel.from_pretrained(model_path, trust_remote_code=True).to(device)
         model_output = diabetesPDiagLLM_output
 
+    if args.model == "ChatGLM-4-9B":
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        # tokenizer.padding_side = "left"
+        # tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+        model = AutoModel.from_pretrained(model_path, trust_remote_code=True).to(device)
+        model_output = ChatGLM4_9B_output
+    
+
     model = model.eval()
     scores = {}
-    mcq_file = "src/eval/data/merged_mcq.csv"
+    mcq_file = "src/eval/data/mcq.csv"
 
     file_name = mcq_file.split("/")[-1]
     print(f"Processing {mcq_file} ...")
@@ -109,7 +138,7 @@ def main(args):
         plt.text(i, score + 1, f"{score:.2f}%", ha="center", va="bottom")
 
     # Save the plot to a file
-    plt.savefig("MCQ Benchmark.png", format="png")  # Save as PNG file
+    plt.savefig(f"src/eval/results/{args.model}_mcq_benchmark.png", format="png") 
 
     # Show the plot
     plt.show()
