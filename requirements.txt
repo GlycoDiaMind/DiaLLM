@@ -5,3 +5,4 @@ transformers>=4.40.0
 accelerate
 peft>=0.3.0
 tyro>=0.5.7
+tiktoken
