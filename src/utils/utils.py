@@ -4,6 +4,7 @@ from typing import Literal
 import json
 import random
 from pathlib import Path
+from typing import List, Dict
 
 
 def merge_csv_files(
@@ -48,7 +49,6 @@ def merge_csv_files(
         print(f"Error: {e}")
 
 
-from typing import List, Dict
 
 def split_train_val(
     dataset: str,
