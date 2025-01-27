@@ -1,5 +1,10 @@
+import os
 import pandas as pd
 from typing import Literal
+import json
+import random
+from pathlib import Path
+
 
 def merge_csv_files(
     file1: str,
@@ -43,9 +48,55 @@ def merge_csv_files(
         print(f"Error: {e}")
 
 
+from typing import List, Dict
+
+def split_train_val(
+    dataset: str,
+    train: str,
+    val: str,
+    split_ratio: float = 0.8
+) -> None:
+    """
+    Splits a JSON file containing an array of objects into two files with the specified ratio.
+
+    Parameters:
+    - dataset (str): Path to the input JSON file.
+    - train (str): Path to save the train dataset 
+    - val (str): Path to save the validation dataset
+    - split_ratio (float): Proportion of data to include in the first split (train). Default is 0.8 (80%).
+
+    Returns:
+    - None
+    """
+    try:
+        with open(dataset, "r") as file:
+            data: List[Dict] = json.load(file)  
+
+        random.shuffle(data)
+
+        split_point: int = int(len(data) * split_ratio)
+        train_data: List[Dict] = data[:split_point]
+        val_data: List[Dict] = data[split_point:]
+
+        # Save the split data to separate files
+        with open(train, "w") as file:
+            json.dump(train_data, file, indent=4)
+
+        with open(val, "w") as file:
+            json.dump(val_data, file, indent=4)
+
+        print(f"Data split completed!")
+        print(f"{len(train_data)} records saved to {train}")
+        print(f"{len(val_data)} records saved to {val}")
+    
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
 
 def main():
-    merge_csv_files("../eval/data/ZhiCheng_MCQ_A1.csv", "../eval/data/ZhiCheng_MCQ_A2.csv", "../eval/data/mcq.csv", merge_type="row")
+    #merge_csv_files("../eval/data/ZhiCheng_MCQ_A1.csv", "../eval/data/ZhiCheng_MCQ_A2.csv", "../eval/data/mcq.csv", merge_type="row")
+    
+    split_train_val("data/wedoctor_data_350.json","data/WeDoctor/train.json","data/WeDoctor/val.json")
 
 
 
