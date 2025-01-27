@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 import torch
 import torch.nn as nn
 import gc
@@ -14,11 +15,11 @@ from transformers import (
     logging,
 )
 from peft import LoraConfig, PeftModel
-from trl import SFTTrainer
+from trl import SFTTrainer,SFTConfig
 from accelerate import Accelerator
 
 
-def load_dataset(dataset_name: str,tokenizer, ) -> DatasetDict:
+def load_data(data_files: str,tokenizer ) -> DatasetDict:
     def format_chat_template(row):
         row_json = [{"role": row["messages"][0]["role"], "content": row["messages"][0]["content"]},
                     {"role": row["messages"][1]["role"], "content": row["messages"][1]["content"]},
@@ -27,22 +28,68 @@ def load_dataset(dataset_name: str,tokenizer, ) -> DatasetDict:
         row["text"] = tokenizer.apply_chat_template(row_json, tokenize=False)
         return row
     
-    dataset = load_dataset("json", data_files=dataset_name)
-    dataset.map(format_chat_template,num_proc=6)
-    dataset.remove_columns(["messages"])
-    return dataset
+    dataset = load_dataset("json", data_files=data_files)
+    train_dataset = dataset["train"]
+    val_dataset = dataset["validation"]
+    train_dataset = train_dataset.map(format_chat_template,num_proc=6)
+    val_dataset = val_dataset.map(format_chat_template,num_proc=6)
+    train_dataset = train_dataset.remove_columns("messages")
+    val_dataset = val_dataset.remove_columns("messages")
+    return train_dataset, val_dataset
+
+def inference():
+    load_directory="../autodl-tmp/DiabetesPDiagLLM20250127_155022"
+    tokenizer = AutoTokenizer.from_pretrained(load_directory,trust_remote_code=True)
+    tokenizer.padding_side="left"
+    tokenizer.pad_token="[PAD]"
+    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"device:{device}")
+    
+    messages = [{
+                "role": "system",
+                "content": "你是一个专业的医生，请基于诊疗指南，为以下患者提供综合的管理意见:"
+            },
+            {
+                "role": "user",
+                "content":"我是一位30岁的男性，头有点晕，检测空腹血糖为10.0mmol/L，餐后为15.0mol/L，BMI 30,我该如何调整我的饮食来控制血糖？"
+            }
+           ]
+
+    inputs = tokenizer.apply_chat_template(messages,
+                                       add_generation_prompt=True,
+                                       tokenize=True,
+                                       return_tensors="pt",
+                                       return_dict=True
+                                       )
+
+    inputs = inputs.to(device)
+    model = AutoModelForCausalLM.from_pretrained(
+        load_directory,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        trust_remote_code=True
+    ).to(device).eval()
+    
+    gen_kwargs = {"max_length": 2500, "do_sample": True, "top_k": 1}
+    with torch.no_grad():
+        outputs = model.generate(**inputs, **gen_kwargs)
+        outputs = outputs[:, inputs['input_ids'].shape[1]:]
+        print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+    
 
 def main():
-    # The model that you want to train from the Hugging Face hub
-    model_name = "../autodl-tmp/glm-4-9b-chat"
+    model_name = "../autodl-tmp/ZhipuAI/glm-4-9b-chat"
 
-    # The instruction dataset to use
-    dataset_name = "wedoctor_data_350.json"
-    train_dataset = "src/data/preprocessed/MCQ/CMExam/train.json"
-    val_dataset = "src/data/preprocessed/MCQ/CMExam/val.json"
+    # dataset
+    data_files = {
+        'train': "data/WeDoctor/train.json",
+        'validation': "data/WeDoctor/val.json"
+    }
 
     # Fine-tuned model name
-    new_model = "glm-4-9b-chat-diabetes-finetune"
+    new_model = "DiabetesPDiagLLM"
 
     ################################################################################
     # QLoRA parameters
@@ -81,7 +128,7 @@ def main():
     output_dir = "./results"
 
     # Number of training epochs
-    num_train_epochs = 3
+    num_train_epochs = 2
 
     # Enable fp16/bf16 training (set bf16 to True with an A100)
     fp16 = False
@@ -94,7 +141,7 @@ def main():
     per_device_eval_batch_size = 1
 
     # Number of update steps to accumulate the gradients for 原来是1
-    gradient_accumulation_steps = 2
+    gradient_accumulation_steps = 1
 
     # Enable gradient checkpointing
     gradient_checkpointing = True
@@ -144,166 +191,129 @@ def main():
     device_map = {"": 0}
     
     
-    # tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-    tokenizer.padding_side = "right"
+    # # tokenizer
+    # tokenizer = AutoTokenizer.from_pretrained(model_name,trust_remote_code=True)
+    # tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+    # tokenizer.padding_side = "left"
     
-    # load dataset
-    train_dataset = load_dataset(train_dataset,tokenizer)
-    val_dataset = load_dataset(val_dataset,tokenizer)
+    # # load dataset
+    # train_dataset,val_dataset = load_data(data_files,tokenizer)
+    # print(f"train_dataset:{train_dataset}")
+    # print(f"val_dataset:{val_dataset}")
     
-    compute_dtype = getattr(torch, bnb_4bit_compute_dtype)
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=use_4bit,
-        bnb_4bit_quant_type=bnb_4bit_quant_type,
-        bnb_4bit_compute_dtype=compute_dtype,
-        bnb_4bit_use_double_quant=use_nested_quant,
-    )
     
-    # Check GPU compatibility with bfloat16
-    if compute_dtype == torch.float16 and use_4bit:
-        major, _ = torch.cuda.get_device_capability()
-        if major >= 8:
-            print("=" * 80)
-            print("Your GPU supports bfloat16: accelerate training with bf16=True")
-            print("=" * 80)
-
-    # Load base model
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        trust_remote_code=True,
-        quantization_config=bnb_config,
-        device_map=device_map
-    )
-    model.config.use_cache = False
-    model.config.pretraining_tp = 1
-
-
-
-    # Load LoRA configuration
-    peft_config = LoraConfig(
-        lora_alpha=lora_alpha,
-        lora_dropout=lora_dropout,
-        r=lora_r,
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
-
-    # Set training parameters
-    training_arguments = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=num_train_epochs,
-        per_device_train_batch_size=per_device_train_batch_size,
-        gradient_accumulation_steps=gradient_accumulation_steps,
-        optim=optim,
-        save_steps=save_steps,
-        logging_steps=logging_steps,
-        learning_rate=learning_rate,
-        weight_decay=weight_decay,
-        fp16=fp16,
-        bf16=bf16,
-        max_grad_norm=max_grad_norm,
-        max_steps=max_steps,
-        warmup_ratio=warmup_ratio,
-        group_by_length=group_by_length,
-        lr_scheduler_type=lr_scheduler_type,
-        report_to="tensorboard"
-    )
-
-    # Modify the trainer initialization to include the train_dataset and eval_dataset
-    trainer = SFTTrainer(
-        model=model,
-        train_dataset=train_dataset,  # Use the split training dataset
-        eval_dataset=val_dataset,  # Use the split validation dataset
-        peft_config=peft_config,
-        dataset_text_field="text",
-        max_seq_length=max_seq_length,
-        tokenizer=tokenizer,
-        args=training_arguments,
-        packing=packing,
-    )
-
-    # Train model
-    trainer.train()
     
-    # Save model
-    trainer.model.save_pretrained(new_model)
     
-    # Reload model in FP16 and merge it with LoRA weights
-    base_model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        low_cpu_mem_usage=True,
-        return_dict=True, 
-        # bf16
-        torch_dtype=torch.float16,
-        device_map=device_map,
-        trust_remote_code=True
-    )
-    model = PeftModel.from_pretrained(base_model, new_model)
-    model = model.merge_and_unload()
-
-    # Reload tokenizer to save it
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    #tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-    tokenizer.padding_side = "right"
+    # compute_dtype = getattr(torch, bnb_4bit_compute_dtype)
+    # bnb_config = BitsAndBytesConfig(
+    #     load_in_4bit=use_4bit,
+    #     bnb_4bit_quant_type=bnb_4bit_quant_type,
+    #     bnb_4bit_compute_dtype=compute_dtype,
+    #     bnb_4bit_use_double_quant=use_nested_quant,
+    # )
     
-    save_directory = "../autodl-tmp/fine_tuned_chatglm_for_diabetes"
+    # # Check GPU compatibility with bfloat16
+    # if compute_dtype == torch.float16 and use_4bit:
+    #     major, _ = torch.cuda.get_device_capability()
+    #     if major >= 8:
+    #         print("=" * 80)
+    #         print("Your GPU supports bfloat16: accelerate training with bf16=True")
+    #         print("=" * 80)
 
-    # Save the model and tokenizer
-    model.save_pretrained(save_directory)
-    tokenizer.save_pretrained(save_directory)
+    # # Load base model
+    # model = AutoModelForCausalLM.from_pretrained(
+    #     model_name,
+    #     trust_remote_code=True,
+    #     quantization_config=bnb_config,
+    #     device_map=device_map
+    # )
+    # model.config.use_cache = False
+    # model.config.pretraining_tp = 1
+
+
+
+    # # Load LoRA configuration
+    # peft_config = LoraConfig(
+    #     lora_alpha=lora_alpha,
+    #     lora_dropout=lora_dropout,
+    #     r=lora_r,
+    #     bias="none",
+    #     task_type="CAUSAL_LM",
+    # )
+
+    # # Set training parameters
+    # training_arguments = TrainingArguments(
+    #     output_dir=output_dir,
+    #     num_train_epochs=num_train_epochs,
+    #     per_device_train_batch_size=per_device_train_batch_size,
+    #     gradient_accumulation_steps=gradient_accumulation_steps,
+    #     optim=optim,
+    #     save_steps=save_steps,
+    #     logging_steps=logging_steps,
+    #     learning_rate=learning_rate,
+    #     weight_decay=weight_decay,
+    #     fp16=fp16,
+    #     bf16=bf16,
+    #     max_grad_norm=max_grad_norm,
+    #     max_steps=max_steps,
+    #     warmup_ratio=warmup_ratio,
+    #     group_by_length=group_by_length,
+    #     lr_scheduler_type=lr_scheduler_type,
+    #     report_to="tensorboard"
+    # )
+
+    # # Modify the trainer initialization to include the train_dataset and eval_dataset
+    # trainer = SFTTrainer(
+    #     model=model,
+    #     train_dataset=train_dataset,  # Use the split training dataset
+    #     eval_dataset=val_dataset,  # Use the split validation dataset
+    #     peft_config=peft_config,
+    #     dataset_text_field="text",
+    #     max_seq_length=max_seq_length,
+    #     tokenizer=tokenizer,
+    #     args=training_arguments,
+    #     packing=packing,
+    # )
+
+    # # Train model
+    # print("\nTraining ...")
+    # trainer.train()
     
-    # Empty VRAM
-    del model
-    del trainer
-    gc.collect()
-    gc.collect()
+    # # Save model
+    # trainer.model.save_pretrained(new_model)
     
-    load_directory="../autodl-tmp/fine_tuned_chatglm_for_diabetes"
-    model = AutoModel.from_pretrained(load_directory,trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained(load_directory,trust_remote_code=True)
-    tokenizer.padding_side="right"
-    #tokenizer.pad_token="[PAD]"
-    tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    # # Reload model in FP16 and merge it with LoRA weights
+    # base_model = AutoModelForCausalLM.from_pretrained(
+    #     model_name,
+    #     low_cpu_mem_usage=True,
+    #     return_dict=True, 
+    #     # bf16
+    #     torch_dtype=torch.float16,
+    #     device_map=device_map,
+    #     trust_remote_code=True
+    # )
+    # model = PeftModel.from_pretrained(base_model, new_model)
+    # model = model.merge_and_unload()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # # Reload tokenizer to save it
+    # tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    # #tokenizer.pad_token = tokenizer.eos_token
+    # tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    # tokenizer.padding_side = "left"
 
-    # Move model to DataParallel for multi-GPU usage
-    if torch.cuda.device_count() > 1:
-        print(f"Using {torch.cuda.device_count()} GPUs!")
-        model = nn.DataParallel(model)
+    # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # save_directory = f"../autodl-tmp/DiabetesPDiagLLM{timestamp}"
 
-    model = model.to(device)
-    model.eval()  # Ensure evaluation mode
+    # # Save the model and tokenizer
+    # model.save_pretrained(save_directory)
+    # tokenizer.save_pretrained(save_directory)
     
-    messages = [{
-                "role": "system",
-                "content": "你是一个专业的医生，请基于诊疗指南，为以下患者提供综合的管理意见:"
-            },
-            {
-                "role": "user",
-                "content":"我是一位30岁的男性，头有点晕，检测空腹血糖为10.0mmol/L，餐后为15.0mol/L，BMI 30,我该如何调整我的饮食来控制血糖？"
-            }
-           ]
+   
 
 
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        
-    inputs = tokenizer(prompt, return_tensors='pt', padding= True, truncation=True).to(device)
-
-    outputs = model.generate(**inputs, max_length=2000, num_return_sequences=1)
-
-    #outputs = model.module.generate(**inputs, max_length=1000, num_return_sequences=1)
-
-    # temperature=0.1,top_p = 0.95,top_k= 5) if isinstance(model, nn.DataParallel) else model.generate(**inputs, max_length=1000, num_return_sequences=1,temperature=0.1,top_p = 0.95,top_k= 5)
-
-    text = tokenizer.decode(outputs[0], skip_special_tokens=False)
-
-    print("Output:")
-    print(text.split("<|assistant|>")[1].split("<|user|>")[0])
+    
     
     
 if __name__ == "__main__":
-    main()
+    #main()
+    inference()
