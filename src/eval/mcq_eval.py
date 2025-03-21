@@ -7,6 +7,8 @@ import argparse
 import matplotlib.pyplot as plt
 
 
+
+
 # setting random seed
 seed = 42
 torch.manual_seed(seed)  # cpu
@@ -45,14 +47,23 @@ def diabetesPDiagLLM_output(content, model, tokenizer):
             "content": content,
         },
     ]
-    prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).to(
-        device
-    )
-    outputs = model.generate(**inputs, max_length=2000, num_return_sequences=1)
-    return tokenizer.decode(outputs[0], skip_special_tokens=False)
+
+    inputs = tokenizer.apply_chat_template(messages,
+                                       add_generation_prompt=True,
+                                       tokenize=True,
+                                       return_tensors="pt",
+                                       return_dict=True
+                                       )
+
+    inputs = inputs.to(device)
+    
+    
+    gen_kwargs = {"max_length": 2500, "do_sample": True, "top_k": 1}
+    with torch.no_grad():
+        outputs = model.generate(**inputs, **gen_kwargs)
+        outputs = outputs[:, inputs['input_ids'].shape[1]:]
+        return tokenizer.decode(outputs[0], skip_special_tokens=True)
+    
 
 
 
@@ -63,7 +74,12 @@ def main(args):
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         tokenizer.padding_side = "left"
         tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-        model = AutoModel.from_pretrained(model_path, trust_remote_code=True).to(device)
+        model = AutoModelForCausalLM.from_pretrained(
+        args.path,
+        torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
+        trust_remote_code=True
+            ).to(device).eval()
         model_output = diabetesPDiagLLM_output
 
     if args.model == "ChatGLM-4-9B":
@@ -71,6 +87,8 @@ def main(args):
         # tokenizer.padding_side = "left"
         # tokenizer.add_special_tokens({"pad_token": "[PAD]"})
         model = AutoModel.from_pretrained(model_path, trust_remote_code=True).to(device)
+        
+        
         model_output = ChatGLM4_9B_output
     
 
@@ -84,6 +102,7 @@ def main(args):
     merged_df = pd.DataFrame(columns=["question", "response", "answer"])
     prompt = "\n请根据题干和选项，给出唯一的最佳答案。输出内容仅为选项英文字母，不要输出任何其他内容。不要输出汉字。"
 
+
     for index, row in tqdm(df.iterrows()):
         output = {}
         response = model_output(row["question"] + prompt, model, tokenizer)
@@ -93,21 +112,8 @@ def main(args):
         df_output = pd.DataFrame(output)
         merged_df = pd.concat([merged_df, df_output])
 
-    # calculate MCQ score
-    merged_df["responseTrimmed"] = merged_df["response"].apply(
-        lambda x: (
-            re.search(
-                r"[ABCDE]", x.split("<|assistant|>")[1].split("<|user|>")[0].strip()
-            ).group()
-            if re.search(
-                r"[ABCDE]", x.split("<|assistant|>")[1].split("<|user|>")[0].strip()
-            )
-            else None
-        )
-    )
-    merged_df["check"] = merged_df.apply(
-        lambda row: 1 if row["responseTrimmed"] == row["answer"][0] else 0, axis=1
-    )
+    merged_df['responseTrimmed'] = merged_df['response'].apply(lambda x: re.search(r'[ABCDE]', x).group() if re.search(r'[ABCDE]', x) else None)
+    merged_df['check'] = merged_df.apply(lambda row: 1 if row['responseTrimmed'] == row['answer'][0] else 0, axis=1)
 
     score = merged_df["check"].mean()
     name = f"{args.model}"

@@ -6,6 +6,7 @@ import random
 from pathlib import Path
 from typing import List, Dict
 
+## 用来分割数据集 ##
 
 def merge_csv_files(
     file1: str,
@@ -96,7 +97,7 @@ def split_train_val(
 def main():
     #merge_csv_files("../eval/data/ZhiCheng_MCQ_A1.csv", "../eval/data/ZhiCheng_MCQ_A2.csv", "../eval/data/mcq.csv", merge_type="row")
     
-    split_train_val("data/wedoctor_data_350.json","data/WeDoctor/train.json","data/WeDoctor/val.json")
+    split_train_val("../../data/system-changed-dataset.json","../../data/WeDoctor/train.json","../../data/WeDoctor/val.json")
 
 
 
