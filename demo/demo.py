@@ -67,7 +67,7 @@ def query_llm(prompt):
 while True:
     user_input = input("\nEnter your prompt (or type 'exit' to quit): ")
     if user_input.lower() == "exit":
-        print("Have a nice day!")
+        print("Bye!")
         break
     response = query_llm(user_input)
     print("\nLLM Response:", response)
