@@ -1,4 +1,3 @@
-
 #  展示 Demo 与模型训练说明文档
 
 本说明文档介绍了该项目的 Demo 展示方式、训练流程、代码结构与关键模块功能。
@@ -10,7 +9,7 @@
 1. **启动前准备**：
    - 确保预训练模型路径已正确设置；
    - 确认提示词内容符合预期；
-   - 默认最大句子长度为 **2048 tokens**；
+   - 默认最大句子长度为 **10000 tokens**；
 
 2. **注意事项**：
    - 请特别注意 **推理过程中的内存释放**，以避免显存溢出；
@@ -22,7 +21,7 @@
 
 ```bash
 # 激活虚拟环境
-source /root/DiabetesPDiagLLM/.diabetesPDiagLLMVenv/bin/activate
+conda activate sum_env
 
 # 进入训练代码目录
 cd DiabetesPDiagLLM/
@@ -54,7 +53,6 @@ python src/train/train.py
 ### `demo/` 文件夹
 
 - 存放用于模拟用户直接输入的交互式展示脚本；
-- 与 Gradio 或 CLI 环境连接进行实时推理。
 
 ---
 
@@ -65,17 +63,26 @@ python src/train/train.py
 - 使用 DeepSeek-32B 模型进行微调训练；
 - 输出模型权重保存至指定目录。
 
-#### `Tensorboard`
+#### `Tensorboard.py`
 - 调用 `Tensorboard` 对训练过程进行图形化展示；
 - 每次训练输出图像默认以 `.png` 格式保存至根目录。
 
+#### `save.py`
+- 本身`train.py`具有保存模型功能，该代码仅在`train`保存失败，显存溢出等情况使用；
+- 每次训练结果保存在`base_model_ckpt`目录下。
+  
 #### `DS_inference.py`
 - 提供模型加载与推理函数；
 - 为工作流模块提供支持，保证模型可独立初始化调用；
 - 与训练流程解耦，便于后续部署与封装。
+- 与 Gradio 或 CLI 环境连接进行实时推理。
 
 ---
 
 如需进一步展示或集成 Gradio 界面，请确保推理模块接口标准化（如：支持 `inference(text, model, tokenizer)`）。
 
 如有路径配置、虚拟环境或模块结构问题，请联系开发者获取支持。
+
+## Author
+
+[MangguoD](https://github.com/MangguoD)

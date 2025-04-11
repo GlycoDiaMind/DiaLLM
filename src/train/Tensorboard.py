@@ -1,9 +1,11 @@
+# Author: MangguoD
+
 import os
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
 
 # 指定 TensorBoard 日志文件目录
-log_dir = "../../results/runs/Mar14_15-30-28_autodl-container-93b9118200-b3724eb5"
+log_dir = "DeepSeek-32B-LoRA-SumDataset/runs/Apr09_17-45-43_autodl-container-c22545b252-9d186e6f"
 event_file = None
 
 # 查找 .tfevents 文件

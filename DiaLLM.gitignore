@@ -1,0 +1,5 @@
+# 数据文件
+src/train/DeepSeek-32B-LoRA/
+src/train/DeepSeek-32B-LoRA-SumDataset/
+results/
+data/
