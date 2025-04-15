@@ -9,10 +9,9 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModel
 import argparse
 import matplotlib.pyplot as plt
 
-# setting random seed
 seed = 42
-torch.manual_seed(seed)  # cpu
-torch.cuda.manual_seed_all(seed)  # gpu
+torch.manual_seed(seed)  
+torch.cuda.manual_seed_all(seed)  
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -94,16 +93,12 @@ def DPD_GLM_output(content, model, tokenizer):
             "content": content,
         },
     ]
-
     inputs = tokenizer.apply_chat_template(messages,
                                        add_generation_prompt=True,
                                        tokenize=True,
                                        return_tensors="pt",
-                                       return_dict=True
-                                       )
-
+                                       return_dict=True)
     inputs = inputs.to(device)
-    
     
     gen_kwargs = {"max_length": 2500, "do_sample": True, "top_k": 1}
     with torch.no_grad():
@@ -135,7 +130,7 @@ def save_score(model_name, score, filename='src/eval/results/mcq_scores.csv'):
         writer.writerows(records)
 
 
-def plot_scores_from_csv(csv_file='src/eval/results/mcq_scores.csv', output_dir='src/eval/results', output_name='mcq_benchmark.png'):
+def plot_scores(csv_file='src/eval/results/mcq_scores.csv', output_dir='src/eval/results', output_name='mcq_benchmark.png'):
     model_scores = {}
 
     # Read the scores from the CSV
@@ -197,4 +192,4 @@ if __name__ == "__main__":
     
     #model_name, score = evaluate_model(args.model, args.path , "src/eval/data/mcq.csv")
     #save_score(model_name, score)
-    plot_scores_from_csv()
+    plot_scores()
