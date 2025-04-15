@@ -8,10 +8,10 @@ def main():
     inference()
 
 def download_llm():
-    snapshot_download("ZhipuAI/glm-4-9b-chat", cache_dir="../../autodl-tmp")
+    snapshot_download("ZhipuAI/glm-4-9b-chat", cache_dir="../autodl-tmp")
 
 def inference():
-    tokenizer = AutoTokenizer.from_pretrained("../../autodl-tmp/ZhipuAI/glm-4-9b-chat", trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained("../autodl-tmp/ZhipuAI/glm-4-9b-chat", trust_remote_code=True)
 
     query = "Hello"
     
@@ -24,7 +24,7 @@ def inference():
     
     inputs = inputs.to(device)
     model = AutoModelForCausalLM.from_pretrained(
-        "../../autodl-tmp/ZhipuAI/glm-4-9b-chat",
+        "../autodl-tmp/ZhipuAI/glm-4-9b-chat",
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
         trust_remote_code=True
@@ -37,4 +37,4 @@ def inference():
         print(tokenizer.decode(outputs[0], skip_special_tokens=True))
     
 if __name__ == "__main__":
-    main()
+    download_llm()
